@@ -10,17 +10,21 @@ This fork edits the way that metadata is written such that all shows will have '
 
 In the original repo, the metadata is set up like this:
 
+```
 Album: NTS
 Artist: DJ
 Title: Show name - Date
+```
 
 The issue here is that all shows get put into the same album, so Plex sets the album artist to "Various Artists", and doesn't allow setting genre by show.
 
-Would be better to set up like this:
+Would be better to set up metadata like this:
 
+```
 Album: DJ/Show name
 Artist: NTS
 Title: Show name - Date
+```
 
 This way we can group NTS shows using artist, and set genre by show.
 
