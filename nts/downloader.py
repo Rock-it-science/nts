@@ -257,27 +257,15 @@ def get_episodes_of_show(show_name):
 def set_m4a_metadata(file_path, parsed, image, image_type):
     audio = MP4(file_path)
 
-    audio[
-        '\xa9nam'] = f'{parsed["title"]} - {parsed["date"].day:02d}.{parsed["date"].month:02d}.{parsed["date"].year:02d}'
+    audio['\xa9nam'] = f'{parsed["title"]} - {parsed["date"].day:02d}.{parsed["date"].month:02d}.{parsed["date"].year:02d}'
     # part of a compilation
     audio['cpil'] = True
     # album
-    audio['\xa9alb'] = 'NTS'
+    audio['\xa9alb'] = parsed["title"]
     # artist
-    join_artists = parsed['artists'] + parsed['parsed_artists']
-    all_artists = []
-    presence_set = set()
-    for aa in join_artists:
-        al = aa.lower()
-        if al not in presence_set:
-            presence_set.add(al)
-            all_artists.append(aa)
-    # add to output data
-    parsed['all_artists'] = all_artists
-    # add to file metadata
-    audio['\xa9ART'] = "; ".join(all_artists)
+    audio['\xa9ART'] = "NTS Radio"
     # year
-    audio['\xa9day'] = f'{parsed["date"].year}'
+    audio['\xa9day'] = f'{parsed["date"]}'
     # comment
     audio['\xa9cmt'] = parsed['url']
     # genre
@@ -299,26 +287,17 @@ def set_m4a_metadata(file_path, parsed, image, image_type):
 def set_mp3_metadata(file_path, parsed, image, image_type):
     audio = mutagen.File(file_path, easy=True)
 
-    audio[
-        'title'] = f'{parsed["title"]} - {parsed["date"].day:02d}.{parsed["date"].month:02d}.{parsed["date"].year:02d}'
+    audio['title'] = f'{parsed["title"]} - {parsed["date"].day:02d}.{parsed["date"].month:02d}.{parsed["date"].year:02d}'
     audio['compilation'] = '1'  # True
-    audio['album'] = 'NTS'
 
-    # add artist string
-    join_artists = parsed['artists'] + parsed['parsed_artists']
-    all_artists = []
-    presence_set = set()
-    for aa in join_artists:
-        al = aa.lower()
-        if al not in presence_set:
-            presence_set.add(al)
-            all_artists.append(aa)
-    audio['artist'] = "; ".join(all_artists)
-    audio['date'] = str(parsed['date'].year)
+    audio['artist'] = "NTS Radio"
+    audio['album'] = parsed["title"]
+    audio['date'] = str(parsed['date'])
 
     # add first genre
     if len(parsed['genres']) != 0:
         audio['genre'] = parsed['genres'][0]
+    # audio['genres'] = parsed['genres']
     audio.save()
 
     # add cover
