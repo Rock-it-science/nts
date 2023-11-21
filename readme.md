@@ -29,7 +29,7 @@ This way we can group NTS shows using artist, and set genre by show.
 First install all the requirements.
 
 ```sh
-pip3 install nts-everdrone
+pip3 install git+https://github.com/Rock-it-science/nts
 ```
 
 ## Usage
