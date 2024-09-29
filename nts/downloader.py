@@ -10,12 +10,10 @@ import requests
 from yt_dlp import YoutubeDL
 from cssutils import parseStyle
 from bs4 import BeautifulSoup
+import ffmpeg
+import music_tag
 
-from mutagen.easyid3 import EasyID3
-from mutagen.id3 import ID3, APIC, COMM
-from mutagen.mp4 import MP4
-
-__version__ = '1.3.0'
+__version__ = '1.3.2'
 
 # defaults to darwin
 download_dir = '~/Downloads'
@@ -24,6 +22,37 @@ if sys.platform.startswith('win32'):
 # expand it
 download_dir = os.path.expanduser('~/Downloads')
 
+def get_suffix(day):
+    if 10 <= day % 100 <= 20:
+        suffix = 'th'
+    else:
+        last_digit = day % 10
+        if last_digit == 1:
+            suffix = 'st'
+        elif last_digit == 2:
+            suffix = 'nd'
+        elif last_digit == 3:
+            suffix = 'rd'
+        else:
+            suffix = 'th'
+    return suffix
+
+def mixcloud_try(parsed):
+    day = parsed['date'].strftime('%d')
+    day += get_suffix(int(day))
+    title = parsed['title'] + ' - ' + day + parsed['date'].strftime(' %B %Y')
+    query = re.sub(r'[-/]', '', title)
+    query = re.sub(r'\s+', '+', query)
+    query = "https://api.mixcloud.com/search/?q=" + query + "&type=cloudcast"
+    reply = requests.get(query)
+    if reply.status_code != 200:
+        return None
+    reply = reply.json()['data']
+    reply = filter(lambda x: x['user']['username'] == 'NTSRadio', reply)
+    for resp in reply:
+        if resp['name'] == title:
+            return resp['url']
+    return None
 
 def download(url, quiet, save_dir, save=True):
     nts_url = url
@@ -38,6 +67,11 @@ def download(url, quiet, save_dir, save=True):
     button = bs.select('.episode__btn.mixcloud-btn')[0]
     link = button.get('data-src')
     host = None
+
+    if 'https://mixcloud' not in link:
+        mixcloud_url = mixcloud_try(parsed)
+        if mixcloud_url:
+            link = mixcloud_url
 
     if 'https://mixcloud' in link:
         host = 'mixcloud'
@@ -99,16 +133,16 @@ def download(url, quiet, save_dir, save=True):
                 _, file_ext = os.path.splitext(file)
                 file_ext = file_ext.lower()
 
-                if file_ext == '.m4a':
-                    set_m4a_metadata(os.path.join(save_dir, file), parsed,
-                                     image, image_type)
-                elif file_ext == '.mp3':
-                    set_mp3_metadata(os.path.join(save_dir, file), parsed,
-                                     image, image_type)
-                else:
-                    print(
-                        f'Cannot edit metadata for unknown file type {file_ext}'
-                    )
+                if file_ext == '.webm' or file_ext == '.opus':
+                    old_file_path = os.path.join(save_dir, file)
+                    file = file_name + '.ogg'
+                    new_file_path = os.path.join(save_dir, file)
+                    ffmpeg.input(old_file_path).output(new_file_path, acodec='copy').run(overwrite_output=True)
+                    os.remove(old_file_path)
+                    file_ext = '.ogg'
+
+                set_metadata(os.path.join(save_dir, file), parsed, image, image_type)
+
     return parsed
 
 
@@ -253,73 +287,45 @@ def get_episodes_of_show(show_name):
 
     return output
 
+def get_title(parsed):
+    return f'{parsed["title"]} - {parsed["date"].day:02d}.{parsed["date"].month:02d}.{parsed["date"].year:02d}'
 
-def set_m4a_metadata(file_path, parsed, image, image_type):
-    audio = MP4(file_path)
+def get_tracklist(parsed):
+    return '\n'.join(list(map(lambda x: f'{x["name"]} by {x["artist"]}', parsed['tracks'])))
 
-    audio['\xa9nam'] = f'{parsed["title"]} - {parsed["date"].day:02d}.{parsed["date"].month:02d}.{parsed["date"].year:02d}'
-    # part of a compilation
-    audio['cpil'] = True
-    # album
-    audio['\xa9alb'] = parsed["title"]
-    # artist
-    audio['\xa9ART'] = "NTS Radio"
-    # year
-    audio['\xa9day'] = f'{parsed["date"]}'
-    # comment
-    audio['\xa9cmt'] = parsed['url']
-    # genre
-    if len(parsed['genres']) != 0:
-        audio['\xa9gen'] = parsed['genres'][0]
-    # cover
-    if image_type != '':
-        match = re.match(r'jpe?g$', image_type)
-        img_format = None
-        if match:
-            img_format = mutagen.mp4.AtomDataType.JPEG
-        else:
-            img_format = mutagen.mp4.AtomDataType.PNG
-        cover = mutagen.mp4.MP4Cover(image, img_format)
-        audio['covr'] = [cover]
-    audio.save()
+def get_date(parsed):
+    return f'{parsed["date"].date().isoformat()}'
 
+def get_genres(parsed):
+    return '; '.join(parsed['genres'])
 
-def set_mp3_metadata(file_path, parsed, image, image_type):
-    audio = mutagen.File(file_path, easy=True)
+def get_artists(parsed):
+    join_artists = parsed['artists'] + parsed['parsed_artists']
+    all_artists = []
+    presence_set = set()
+    for aa in join_artists:
+        al = aa.lower()
+        if al not in presence_set:
+            presence_set.add(al)
+            all_artists.append(aa)
+    return "; ".join(all_artists)
 
-    audio['title'] = f'{parsed["title"]} - {parsed["date"].day:02d}.{parsed["date"].month:02d}.{parsed["date"].year:02d}'
-    audio['compilation'] = '1'  # True
+def set_metadata(file_path, parsed, image, image_type):
+    f = music_tag.load_file(file_path)
 
-    audio['artist'] = "NTS Radio"
-    audio['album'] = parsed["title"]
-    audio['date'] = str(parsed['date'])
+    f['title'] = get_title(parsed)
+    f['compilation'] = 1
+    f['artist'] = 'NTS Radio'
+    f['album'] = get_artists(parsed)
+    f.raw['year'] = get_date(parsed)
+    f['genre'] = get_genres(parsed)
+    tracklist = get_tracklist(parsed)
+    if tracklist:
+        f['lyrics'] = "Tracklist:\n" + get_tracklist(parsed)
+    f['artwork'] = image
+    f['comment'] = parsed['url']
 
-    # add first genre
-    if len(parsed['genres']) != 0:
-        audio['genre'] = parsed['genres'][0]
-    # audio['genres'] = parsed['genres']
-    audio.save()
-
-    # add cover
-    audio = ID3(file_path)
-    if audio.getall('APIC'):
-        audio.delall('APIC')
-    if image_type != '':
-        audio.add(
-            APIC(encoding=3,
-                 mime=image_type,
-                 type=3,
-                 desc=u'Cover',
-                 data=image))
-
-    # add comment
-    audio.delall('COMM')
-    audio['COMM'] = COMM(encoding=0,
-                         lang='eng',
-                         desc=u'',
-                         text=[parsed['url']])
-    audio.save()
-
+    f.save()
 
 def main():
     episode_regex = r'.*nts\.live\/shows.+(\/episodes)\/.+'
