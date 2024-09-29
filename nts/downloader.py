@@ -315,8 +315,8 @@ def set_metadata(file_path, parsed, image, image_type):
 
     f['title'] = get_title(parsed)
     f['compilation'] = 1
-    f['album'] = 'NTS'
-    f['artist'] = get_artists(parsed)
+    f['artist'] = 'NTS Radio'
+    f['album'] = get_artists(parsed)
     f.raw['year'] = get_date(parsed)
     f['genre'] = get_genres(parsed)
     tracklist = get_tracklist(parsed)
